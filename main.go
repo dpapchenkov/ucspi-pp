@@ -146,8 +146,7 @@ func main() {
 			dEnv[j], j = sEnv[i], j+1
 		}
 	}
-
-	dEnv = append(dEnv, "TCPLOCALIP="+addr(h.Destination), "TCPLOCALPORT="+port(h.Destination), "TCPREMOTEIP="+addr(h.Source), "TCPREMOTEPORT="+port(h.Source))
+	dEnv = append(dEnv[:j], "TCPLOCALIP="+addr(h.Destination), "TCPLOCALPORT="+port(h.Destination), "TCPREMOTEIP="+addr(h.Source), "TCPREMOTEPORT="+port(h.Source))
 run:
 	Die("error while executing %s: %v", command, syscall.Exec(command, args, dEnv))
 }
