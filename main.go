@@ -133,7 +133,7 @@ func main() {
 	if h.Source == nil || h.Destination == nil {
 		Die("source or destination address is nil, something went wrong")
 	}
-	dEnv = make([]string, len(sEnv), len(sEnv)+4)
+	dEnv = make([]string, len(sEnv)+4)
 	for i = 0; i < len(sEnv); i++ {
 		switch {
 		case strings.HasPrefix(sEnv[i], "TCPLOCALHOST="), strings.HasPrefix(sEnv[i], "TCPREMOTEHOST="):
@@ -146,7 +146,11 @@ func main() {
 			dEnv[j], j = sEnv[i], j+1
 		}
 	}
-	dEnv = append(dEnv[:j], "TCPLOCALIP="+addr(h.Destination), "TCPLOCALPORT="+port(h.Destination), "TCPREMOTEIP="+addr(h.Source), "TCPREMOTEPORT="+port(h.Source))
+	dEnv[j], j = "TCPLOCALIP="+addr(h.Destination), j+1
+	dEnv[j], j = "TCPLOCALPORT="+port(h.Destination), j+1
+	dEnv[j], j = "TCPREMOTEIP="+addr(h.Source), j+1
+	dEnv[j], j = "TCPREMOTEPORT="+port(h.Source), j+1
+	dEnv = dEnv[:j]
 run:
 	Die("error while executing %s: %v", command, syscall.Exec(command, args, dEnv))
 }
