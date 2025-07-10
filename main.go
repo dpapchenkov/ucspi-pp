@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
+	"syscall"
 	"time"
 )
 
@@ -90,11 +92,20 @@ func main() {
 	if len(args) == 0 {
 		Die("Usage: %s [-v|-q|-Q] [-t <timeout>] <command> [arguments]", os.Args[0])
 	}
-
+	command := args[0]
 	var (
-		err error
-		h   *proxyproto.Header
+		err  error
+		h    *proxyproto.Header
+		i    = 0
+		j    = 0
+		dEnv []string
 	)
+
+	if !strings.Contains(command, "/") {
+		if command, err = exec.LookPath(command); err != nil {
+			Die("error while looking %s in PATH: %v", args[0], err)
+		}
+	}
 
 	done := make(chan bool, 1)
 
@@ -114,22 +125,29 @@ func main() {
 		Die("error %v", err)
 	}
 	Msg(1, "version %d header parsed, Local=%v, source=%v, destination=%v, unknown=%v", h.Version, h.IsLocal, h.Source, h.Destination, h.Unknown)
-	env := os.Environ()
+	sEnv := os.Environ()
 	if len(h.Unknown) > 0 || h.IsLocal {
+		dEnv = sEnv
 		goto run
 	}
 	if h.Source == nil || h.Destination == nil {
 		Die("source or destination address is nil, something went wrong")
 	}
-	env = append(env, "TCPLOCALHOST=", "TCPREMOTEHOST=", "TCPLOCALIP="+addr(h.Destination), "TCPLOCALPORT="+port(h.Destination), "TCPREMOTEIP="+addr(h.Source), "TCPREMOTEPORT="+port(h.Source))
-run:
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Env = env
-	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	if err = cmd.Run(); err != nil {
-		Die("exec: %v", err)
+	dEnv = make([]string, len(sEnv), len(sEnv)+4)
+	for i = 0; i < len(sEnv); i++ {
+		switch {
+		case strings.HasPrefix(sEnv[i], "TCPLOCALHOST="), strings.HasPrefix(sEnv[i], "TCPREMOTEHOST="):
+			continue
+		case strings.HasPrefix(sEnv[i], "TCPLOCALIP="), strings.HasPrefix(sEnv[i], "TCPREMOTEIP="):
+			continue
+		case strings.HasPrefix(sEnv[i], "TCPLOCALPORT="), strings.HasPrefix(sEnv[i], "TCPREMOTEPORT="):
+			continue
+		default:
+			dEnv[j], j = sEnv[i], j+1
+		}
 	}
-	os.Exit(0)
+
+	dEnv = append(dEnv, "TCPLOCALIP="+addr(h.Destination), "TCPLOCALPORT="+port(h.Destination), "TCPREMOTEIP="+addr(h.Source), "TCPREMOTEPORT="+port(h.Source))
+run:
+	Die("error while executing %s: %v", command, syscall.Exec(command, args, dEnv))
 }
