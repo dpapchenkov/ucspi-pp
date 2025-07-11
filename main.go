@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/mailgun/proxyproto"
 	"net"
 	"os"
 	"os/exec"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/mailgun/proxyproto"
 )
 
 var (
@@ -148,7 +149,16 @@ func main() {
 	}
 
 	if len(h.Unknown) > 0 || h.IsLocal {
-		dEnv = sEnv
+		if saneEnv {
+			dEnv = []string{
+				"TCPLOCALIP=" + os.Getenv("TCPLOCALIP"),
+				"TCPLOCALPORT=" + os.Getenv("TCPLOCALPORT"),
+				"TCPREMOTEIP=" + os.Getenv("TCPREMOTEIP"),
+				"TCPREMOTEPORT=" + os.Getenv("TCPREMOTEPORT"),
+			}
+		} else {
+			dEnv = sEnv
+		}
 		goto run
 	}
 
