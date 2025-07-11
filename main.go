@@ -15,12 +15,14 @@ import (
 )
 
 var (
-	logLevel = 1
-	timeout  = time.Duration(10 * time.Second)
+	logLevel  = 1
+	timeout   = time.Duration(10 * time.Second)
+	removeEnv = make([]string, 0, 10)
+	saneEnv   = false
 )
 
 func Msg(level int, format string, args ...any) {
-	if level > logLevel {
+	if level >= logLevel {
 		return
 	}
 	if len(args) > 0 {
@@ -47,8 +49,8 @@ func Die(format string, args ...any) {
 // The default is -Q; later arguments override earlier arguments. [tool]
 // may support many further options.
 
-func parseBool(s string, value int, dest *int) error {
-	if b, e := strconv.ParseBool(s); e != nil {
+func parseBool[T interface{ ~int | ~bool }](s string, value T, dest *T) error {
+	if b, e := strconv.ParseBool(strings.TrimSpace(s)); e != nil {
 		return e
 	} else if b {
 		*dest = value
@@ -73,6 +75,17 @@ func parse_t(s string) error {
 	}
 	return nil
 }
+func parse_x(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return errors.New("while parsing -x: empty varname")
+	}
+	removeEnv = append(removeEnv, s+"=")
+	return nil
+}
+func parse_X(s string) error {
+	return parseBool(s, true, &saneEnv)
+}
 
 func addr(a net.Addr) string {
 	return a.(*net.TCPAddr).IP.String()
@@ -86,6 +99,8 @@ func main() {
 	flag.BoolFunc("Q", "all available error messages; no messages in case of success", parse_Q)
 	flag.BoolFunc("q", "no messages in any case", parse_q)
 	flag.Func("t", "header read timeout", parse_t)
+	flag.Func("x", "eXclude specified environment variable", parse_x)
+	flag.BoolFunc("X", "create new empty environment", parse_X)
 	flag.Parse()
 
 	args := flag.Args()
@@ -99,6 +114,7 @@ func main() {
 		i    = 0
 		j    = 0
 		dEnv []string
+		sEnv []string
 	)
 
 	if !strings.Contains(command, "/") {
@@ -124,27 +140,32 @@ func main() {
 	if err != nil {
 		Die("error %v", err)
 	}
+
 	Msg(1, "version %d header parsed, Local=%v, source=%v, destination=%v, unknown=%v", h.Version, h.IsLocal, h.Source, h.Destination, h.Unknown)
-	sEnv := os.Environ()
+
+	if !saneEnv {
+		sEnv = os.Environ()
+	}
+
 	if len(h.Unknown) > 0 || h.IsLocal {
 		dEnv = sEnv
 		goto run
 	}
+
 	if h.Source == nil || h.Destination == nil {
 		Die("source or destination address is nil, something went wrong")
 	}
+
 	dEnv = make([]string, len(sEnv)+4)
+
+env:
 	for i = 0; i < len(sEnv); i++ {
-		switch {
-		case strings.HasPrefix(sEnv[i], "TCPLOCALHOST="), strings.HasPrefix(sEnv[i], "TCPREMOTEHOST="):
-			continue
-		case strings.HasPrefix(sEnv[i], "TCPLOCALIP="), strings.HasPrefix(sEnv[i], "TCPREMOTEIP="):
-			continue
-		case strings.HasPrefix(sEnv[i], "TCPLOCALPORT="), strings.HasPrefix(sEnv[i], "TCPREMOTEPORT="):
-			continue
-		default:
-			dEnv[j], j = sEnv[i], j+1
+		for _, v := range removeEnv {
+			if strings.HasPrefix(sEnv[i], v) {
+				continue env
+			}
 		}
+		dEnv[j], j = sEnv[i], j+1
 	}
 	dEnv[j], j = "TCPLOCALIP="+addr(h.Destination), j+1
 	dEnv[j], j = "TCPLOCALPORT="+port(h.Destination), j+1
